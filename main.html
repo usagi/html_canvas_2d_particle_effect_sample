@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<script>
+
+var conf = {
+  parts_path: "parts.png",
+  parts: [
+    {x: 0, y: 0, w: 8, h: 8},
+    {x: 0, y: 8, w: 8, h: 8},
+    {x: 8, y: 0, w: 8, h: 8},
+    {x: 8, y: 8, w: 8, h: 8},
+  ],
+  time_resolution: 1000.0 / 60.0, // [ms]
+  split_range: {min: 16, max: 96}, // random number range of particle in an effect
+  effect_life_time: 4.0, // [sec]
+  num_of_effects: 4,
+};
+
+var tmp = {};
+
+function particle(part_, px_, py_, vx_, vy_, mass_){
+  this.part = part_; // part name
+  this.px = px_; // position
+  this.py = py_;
+  this.vx = vx_; // velocity
+  this.vy = vy_;
+  this.ax = 0.0; // acceleration
+  this.ay = 0.0;
+  this.mass = (mass_ > 0 ) ? mass_ : 1.0; // mass
+  this.time = 0.0; // local time
+  this.resistance = 0.05; // pseudo resistance coefficient
+  this.specialized_update = null; // specialized update function
+};
+particle.prototype.force = function(fx_, fy_){
+  // F = m a ... Newton Physics
+  this.ax = fx_ / this.mass;
+  this.ay = fy_ / this.mass;
+  // F -= R v ... pseudo resistance
+  this.ax -= this.resistance * this.vx;
+  this.ay -= this.resistance * this.vy;
+}
+particle.prototype.update = function(t_){
+  this.time += t_; // increment the time
+  if(typeof(this.specialized_update) === "function")
+    this.specialized_update(t_);
+  else
+    this.default_update(t_);
+};
+particle.prototype.default_update = function(t_){
+  this.vx += t_ * this.ax; // apply to the velociry from the acceleration
+  this.vy += t_ * this.ay;
+  this.px += t_ * this.vx; // apply to the position from the velocity
+  this.py += t_ * this.vy;
+};
+particle.prototype.draw = function(){
+  var c = tmp.context;
+  c.globalAlpha = 1.0 - (this.time / conf.effect_life_time);
+  c.drawImage(
+    tmp.parts,
+    conf.parts[this.part].x,
+    conf.parts[this.part].y,
+    conf.parts[this.part].w,
+    conf.parts[this.part].h,
+    this.px,
+    this.py,
+    conf.parts[this.part].w,
+    conf.parts[this.part].h
+  );
+};
+
+function effect(px_, py_, part_, split_){
+  if(arguments.length < 4)
+    split_ = Math.floor(Math.random() * (conf.split_range.max + 1)) + conf.split_range.min;
+  this.objects = [];
+  var split_radians = 2 * Math.PI / split_;
+  var rotation_radians = Math.random() * Math.PI * 2;
+  var v = Math.random() * 64;
+  for(var n = split_; n; --n){
+    var r = rotation_radians + split_radians * n;
+    this.objects.push(
+      new particle(
+        part_,
+        px_,
+        py_,
+        Math.sin(r) * v,
+        Math.cos(r) * v
+      )
+    );
+  }
+  this.time = 0.0;
+  this.dispose = false;
+};
+effect.prototype.update = function(t_){
+  this.time += t_;
+  if(this.time > conf.effect_life_time)
+    this.dispose = true;
+  for(var n in this.objects)
+    this.objects[n].update(t_);
+}
+effect.prototype.draw = function(){
+  for(var n in this.objects)
+    this.objects[n].draw();
+}
+
+function update_and_draw(){
+  var now = new Date();
+  var delta_time = 0.001 * (now - tmp.old_time);
+  tmp.old_time = now;
+  tmp.context.clearRect(0, 0, tmp.target.offsetWidth, tmp.target.offsetHeight);
+  
+  var new_objects = [];
+  for(var n in tmp.objects){
+    var o = tmp.objects[n];
+    o.update(delta_time);
+    if(!o.dispose){
+      new_objects.push(o);
+      o.draw();
+    }
+  }
+  tmp.objects = new_objects;
+}
+
+function main(){
+  tmp.old_time = new Date();
+  
+  var body = document.body;
+  
+  window.addEventListener("resize", function(){
+    var w_ = window.innerWidth;
+    var h_ = window.innerHeight;
+    var w = w_ + "px";
+    var h = h_ + "px";
+    var bs = body.style;
+    bs.width = w;
+    bs.height = h;
+    var ts = tmp.target.style;
+    ts.width = w;
+    ts.height = h;
+    tmp.target.setAttribute("width", w_);
+    tmp.target.setAttribute("height", h_);
+  });
+  
+  var target = document.createElement("canvas");
+  body.appendChild(target);
+  tmp.target = target;
+  tmp.context = target.getContext("2d");
+  
+  var e = document.createEvent("UIEvent");
+  e.initUIEvent("resize", true, true, window, 1);
+  window.dispatchEvent(e);
+  
+  tmp.parts = new Image();
+  tmp.parts.src = conf.parts_path;
+  tmp.objects = [];
+  
+  window.addEventListener("click", function(e){
+    var x = e.layerX;
+    var y = e.layerY;
+    for(var n = 0; n < conf.num_of_effects; ++n){
+      var part = Math.floor(Math.random() * conf.parts.length);
+      tmp.objects.push(new effect(x, y, part));
+    }
+  });
+
+  setInterval(update_and_draw, conf.time_resolution);
+}
+
+window.addEventListener("load", main);
+
+</script>
+
